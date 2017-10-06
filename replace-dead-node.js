@@ -7,7 +7,7 @@ var yesno = require('yesno');
 
 var redisClusterConn = {
     "host": "127.0.0.1",
-    "port": 7001
+    "port": 7002
 };
 var redisCluster = new Redis.Cluster([redisClusterConn]);
 var newRedisConn = {
@@ -28,8 +28,7 @@ async.waterfall([
 
 function getClusterInfo(callback) {
     arbitraryCommand(redisCluster, 'cluster', ['nodes'], function (err, value) {
-        var decoder = new StringDecoder('utf8');
-        var clusterInfo = decoder.write(Buffer.from(value));
+        var clusterInfo = value.toString();
         var nodes = redisCluster.nodes();
 
         console.log("cluster info:");
@@ -59,6 +58,9 @@ function parseClusterInfo(results, callback) {
 }
 
 function forgetBrokenNode(results, callback) {
+    if (!results.nodeId)
+        throw 'no disconnected node found, exiting';
+
     yesno.ask('About to send cluster forget, ok to continue?', true, function(ok) {
         if(ok) {
             async.map(results.clusterNodes, function(node, callback) {
@@ -72,7 +74,7 @@ function forgetBrokenNode(results, callback) {
                     callback(null, null);
                 }
             }, function(err, data) {
-                if (err) throw err;
+                if (err) console.log(err);
                 callback(null, results);
             });
         } else {
@@ -82,10 +84,15 @@ function forgetBrokenNode(results, callback) {
 }
 
 function addNewNode(results, callback) {
-    console.log("~/Downloads/redis-3.2.10/src/redis-trib.rb add-node " + newRedisConn.host + ":" + newRedisConn.port + " " + redisClusterConn.host + ":" + redisClusterConn.port);
-    yesno.ask('Please add new node, ok to continue?', true, function(ok) {
+    yesno.ask('About to add new node, ok to continue?', true, function(ok) {
         if(ok) {
-            callback(null, results);
+            arbitraryCommand(newRedis, 'cluster', ['meet', redisClusterConn.host, redisClusterConn.port], function (err, value) {
+                if (err) throw err;
+                console.log(value.toString());
+                // TODO check that new node was successfully added before continuing. for now just pause for a second
+                sleep.msleep(1000);
+                callback(null, results);
+            });
         } else {
             throw 'exiting';
         }
@@ -119,7 +126,7 @@ function assignSlotsToNewNode(results, callback) {
                 callback(null, results);
             });
         } else {
-            throw exiting;
+            throw 'exiting';
         }
     });
 }
