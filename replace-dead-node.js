@@ -5,11 +5,11 @@ const { StringDecoder } = require('string_decoder');
 var yesno = require('yesno');
 
 
-var existingRedisConn = {
+var redisClusterConn = {
     "host": "127.0.0.1",
     "port": 7001
 };
-var existingRedis = new Redis(existingRedisConn);
+var redisCluster = new Redis.Cluster([redisClusterConn]);
 var newRedisConn = {
     "host": "127.0.0.1",
     "port": 7003
@@ -27,13 +27,16 @@ async.waterfall([
 });
 
 function getClusterInfo(callback) {
-    arbitraryCommand(existingRedis, 'cluster', ['nodes'], function (err, value) {
+    arbitraryCommand(redisCluster, 'cluster', ['nodes'], function (err, value) {
         var decoder = new StringDecoder('utf8');
         var clusterInfo = decoder.write(Buffer.from(value));
+        var nodes = redisCluster.nodes();
+
         console.log("cluster info:");
         console.log(clusterInfo);
         callback(null, {
-            'clusterInfo': clusterInfo
+            'clusterInfo': clusterInfo,
+            'clusterNodes': nodes
         });
     });
 }
@@ -56,10 +59,22 @@ function parseClusterInfo(results, callback) {
 }
 
 function forgetBrokenNode(results, callback) {
-    console.log("~/Downloads/redis-3.2.10/src/redis-trib.rb call " + existingRedisConn.host + ":" + existingRedisConn.port + " cluster forget " + results.nodeId);
-    yesno.ask('Please run forget command, ok to continue?', true, function(ok) {
+    yesno.ask('About to send cluster forget, ok to continue?', true, function(ok) {
         if(ok) {
-            callback(null, results);
+            async.map(results.clusterNodes, function(node, callback) {
+                if (node.status != "end") { // skip over the failed node
+                    arbitraryCommand(node, 'cluster', ['forget', results.nodeId], function (err, value) {
+                        if (err) throw err;
+                        console.log(value.toString());
+                        callback(null, null);
+                    });
+                } else {
+                    callback(null, null);
+                }
+            }, function(err, results) {
+                if (err) throw err;
+                callback(null, results);
+            });
         } else {
             throw 'exiting';
         }
@@ -67,7 +82,7 @@ function forgetBrokenNode(results, callback) {
 }
 
 function addNewNode(results, callback) {
-    console.log("~/Downloads/redis-3.2.10/src/redis-trib.rb add-node " + newRedisConn.host + ":" + newRedisConn.port + " " + existingRedisConn.host + ":" + existingRedisConn.port);
+    console.log("~/Downloads/redis-3.2.10/src/redis-trib.rb add-node " + newRedisConn.host + ":" + newRedisConn.port + " " + redisClusterConn.host + ":" + redisClusterConn.port);
     yesno.ask('Please add new node, ok to continue?', true, function(ok) {
         if(ok) {
             callback(null, results);
@@ -100,7 +115,7 @@ function assignSlotsToNewNode(results, callback) {
         if (ok) {
             arbitraryCommand(newRedis, 'cluster', args, function (err, value) {
                 if (err) throw err;
-                console.log(value.toString()); //-> 'OK'
+                console.log(value.toString());
                 callback(null, results);
             });
         } else {
