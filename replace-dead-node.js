@@ -71,7 +71,7 @@ function forgetBrokenNode(results, callback) {
                 } else {
                     callback(null, null);
                 }
-            }, function(err, results) {
+            }, function(err, data) {
                 if (err) throw err;
                 callback(null, results);
             });
