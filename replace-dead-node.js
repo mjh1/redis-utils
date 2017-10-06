@@ -5,15 +5,16 @@ const { StringDecoder } = require('string_decoder');
 var yesno = require('yesno');
 
 
-
-var existingRedis = new Redis({
+var existingRedisConn = {
     "host": "127.0.0.1",
     "port": 7001
-});
-var newRedis = new Redis({
+};
+var existingRedis = new Redis(existingRedisConn);
+var newRedisConn = {
     "host": "127.0.0.1",
     "port": 7003
-});
+};
+var newRedis = new Redis(newRedisConn);
 
 async.waterfall([
     getClusterInfo,
@@ -29,6 +30,8 @@ function getClusterInfo(callback) {
     arbitraryCommand(existingRedis, 'cluster', ['nodes'], function (err, value) {
         var decoder = new StringDecoder('utf8');
         var clusterInfo = decoder.write(Buffer.from(value));
+        console.log("cluster info:");
+        console.log(clusterInfo);
         callback(null, {
             'clusterInfo': clusterInfo
         });
@@ -43,7 +46,6 @@ function parseClusterInfo(results, callback) {
         var regex = /([^\s]+).*disconnected\s+([^\s]+)/g;
         var match = regex.exec(line);
         if (match) {
-            console.log(match);
             results['nodeId'] = match[1];
             results['missingSlots'] = match[2];
             break;
@@ -54,6 +56,7 @@ function parseClusterInfo(results, callback) {
 }
 
 function forgetBrokenNode(results, callback) {
+    console.log("~/Downloads/redis-3.2.10/src/redis-trib.rb call " + existingRedisConn.host + ":" + existingRedisConn.port + " cluster forget " + results.nodeId);
     yesno.ask('Please run forget command, ok to continue?', true, function(ok) {
         if(ok) {
             callback(null, results);
@@ -64,6 +67,7 @@ function forgetBrokenNode(results, callback) {
 }
 
 function addNewNode(results, callback) {
+    console.log("~/Downloads/redis-3.2.10/src/redis-trib.rb add-node " + newRedisConn.host + ":" + newRedisConn.port + " " + existingRedisConn.host + ":" + existingRedisConn.port);
     yesno.ask('Please add new node, ok to continue?', true, function(ok) {
         if(ok) {
             callback(null, results);
